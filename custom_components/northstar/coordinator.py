@@ -31,6 +31,7 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
         self.api = api
         self.config_entry = config_entry
         self._token: str | None = None
+        self._refresh_token: str | None = None
 
         update_interval = timedelta(
             seconds=config_entry.options.get("update_interval", DEFAULT_UPDATE_INTERVAL)
@@ -48,15 +49,14 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             # Authenticate if we don't have a token
             if not self._token:
-                self._token = await self._authenticate()
+                await self._authenticate()
 
             # Get list of cars
             try:
                 cars = await self.api.get_cars(self._token)
             except AuthenticationError:
-                # Token expired, re-authenticate and retry
-                _LOGGER.debug("Token expired, re-authenticating")
-                self._token = await self._authenticate()
+                # Token expired — try refresh first, fall back to full login
+                await self._refresh_or_authenticate()
                 cars = await self.api.get_cars(self._token)
 
             # Fetch detailed data for each car via unified snapshot endpoint
@@ -104,15 +104,31 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.exception("Unexpected error fetching data")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
-    async def _authenticate(self) -> str:
-        """Authenticate and return access token."""
+    async def _authenticate(self) -> None:
+        """Full authentication with email/password."""
         email = self.config_entry.data[CONF_EMAIL]
         password = self.config_entry.data[CONF_PASSWORD]
 
         try:
-            token = await self.api.authenticate(email, password)
-            _LOGGER.debug("Successfully authenticated")
-            return token
+            result = await self.api.authenticate(email, password)
+            self._token = result["accessToken"]
+            self._refresh_token = result.get("refreshToken")
+            _LOGGER.debug("Successfully authenticated (refresh token %s)",
+                          "received" if self._refresh_token else "not available")
         except AuthenticationError as err:
             _LOGGER.error("Authentication failed: %s", err)
             raise ConfigEntryAuthFailed("Invalid credentials") from err
+
+    async def _refresh_or_authenticate(self) -> None:
+        """Try refresh token first, fall back to full login."""
+        if self._refresh_token:
+            try:
+                result = await self.api.refresh_token(self._refresh_token)
+                self._token = result["accessToken"]
+                self._refresh_token = result.get("refreshToken", self._refresh_token)
+                _LOGGER.debug("Token refreshed successfully")
+                return
+            except (AuthenticationError, APIError) as err:
+                _LOGGER.warning("Token refresh failed, falling back to full login: %s", err)
+
+        await self._authenticate()

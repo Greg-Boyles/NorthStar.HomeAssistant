@@ -32,8 +32,8 @@ class NorthStarApiClient:
         self._base_url = base_url.rstrip("/")
         self._session = session
 
-    async def authenticate(self, email: str, password: str) -> str:
-        """Authenticate with NorthStar API and return access token."""
+    async def authenticate(self, email: str, password: str) -> dict[str, Any]:
+        """Authenticate with NorthStar API and return token response."""
         url = f"{self._base_url}/api/auth/login"
         data = {"email": email, "password": password}
 
@@ -46,10 +46,29 @@ class NorthStarApiClient:
                         text = await response.text()
                         raise APIError(f"Authentication failed: {response.status} - {text}")
                     
-                    result = await response.json()
-                    return result["accessToken"]
+                    return await response.json()
         except asyncio.TimeoutError as err:
             raise TimeoutError("Authentication request timed out") from err
+        except aiohttp.ClientError as err:
+            raise APIError(f"Connection error: {err}") from err
+
+    async def refresh_token(self, refresh_token: str) -> dict[str, Any]:
+        """Refresh an access token. Single HTTP call vs full OIDC login."""
+        url = f"{self._base_url}/api/auth/refresh"
+        data = {"refreshToken": refresh_token}
+
+        try:
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                async with self._session.post(url, json=data, ssl=False) as response:
+                    if response.status == 401:
+                        raise AuthenticationError("Refresh token expired or invalid")
+                    if response.status != 200:
+                        text = await response.text()
+                        raise APIError(f"Token refresh failed: {response.status} - {text}")
+                    
+                    return await response.json()
+        except asyncio.TimeoutError as err:
+            raise TimeoutError("Token refresh request timed out") from err
         except aiohttp.ClientError as err:
             raise APIError(f"Connection error: {err}") from err
 
