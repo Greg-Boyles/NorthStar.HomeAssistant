@@ -1,11 +1,15 @@
 {
   "domain": "northstar",
   "name": "Polestar NorthStar Api",
-  "codeowners": ["@Greg-Boyles"],
+  "codeowners": [
+    "@Greg-Boyles"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/Greg-Boyles/NorthStar.HomeAssistant",
   "iot_class": "cloud_polling",
-  "requirements": ["aiohttp>=3.9.0"],
-  "version": "1.0.0"
+  "requirements": [
+    "aiohttp>=3.9.0"
+  ],
+  "version": "1.0.1"
 }
