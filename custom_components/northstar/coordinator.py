@@ -59,40 +59,38 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
                 self._token = await self._authenticate()
                 cars = await self.api.get_cars(self._token)
 
-            # Fetch detailed data for each car
+            # Fetch detailed data for each car via unified snapshot endpoint
             result = {}
             for car in cars:
                 vin = car.get("vin")
                 if not vin:
                     continue
 
-                # Fetch all data in parallel
                 car_data = {"car": car}
 
-                tasks = {
-                    "battery": self.api.get_battery(self._token, vin),
-                    "trips": self.api.get_trips(self._token, vin),
-                    "status": self.api.get_status(self._token, vin),
-                    "charging_schedule": self.api.get_charging_schedule(self._token, vin),
-                    "climate_schedule": self.api.get_climate_schedule(self._token, vin),
-                }
-
-                results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-
-                for key, result_value in zip(tasks.keys(), results):
-                    if isinstance(result_value, Exception):
-                        if isinstance(result_value, TimeoutError):
-                            _LOGGER.warning(
-                                "Timeout fetching %s for VIN %s (car may be asleep)", key, vin
-                            )
-                            car_data[key] = None
-                        else:
-                            _LOGGER.error(
-                                "Error fetching %s for VIN %s: %s", key, vin, result_value
-                            )
-                            car_data[key] = None
-                    else:
-                        car_data[key] = result_value
+                try:
+                    snapshot = await self.api.get_snapshot(self._token, vin)
+                    car_data["battery"] = snapshot.get("battery")
+                    car_data["trips"] = snapshot.get("trips")
+                    car_data["status"] = snapshot.get("status")
+                    car_data["charging_schedule"] = snapshot.get("chargingSchedule")
+                    car_data["climate_schedule"] = snapshot.get("climateSchedule")
+                except TimeoutError:
+                    _LOGGER.warning(
+                        "Timeout fetching snapshot for VIN %s (car may be asleep)", vin
+                    )
+                    car_data.update(
+                        battery=None, trips=None, status=None,
+                        charging_schedule=None, climate_schedule=None,
+                    )
+                except APIError as err:
+                    _LOGGER.error(
+                        "Error fetching snapshot for VIN %s: %s", vin, err
+                    )
+                    car_data.update(
+                        battery=None, trips=None, status=None,
+                        charging_schedule=None, climate_schedule=None,
+                    )
 
                 result[vin] = car_data
 

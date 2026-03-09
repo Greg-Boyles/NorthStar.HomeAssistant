@@ -77,6 +77,10 @@ class NorthStarApiClient:
         """Get climate schedule for a car."""
         return await self._get(f"/api/cars/{vin}/climate-schedule", token)
 
+    async def get_snapshot(self, token: str, vin: str) -> dict[str, Any]:
+        """Get unified vehicle snapshot (all data in one call)."""
+        return await self._get(f"/api/cars/{vin}/snapshot", token)
+
     async def _get(self, path: str, token: str) -> dict[str, Any] | list[dict[str, Any]]:
         """Make a GET request."""
         url = f"{self._base_url}{path}"
