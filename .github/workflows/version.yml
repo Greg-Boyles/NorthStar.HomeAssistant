@@ -1,0 +1,51 @@
+name: Version and Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'Bump version to')"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v4.2.0
+        with:
+          versionSpec: "6.x"
+
+      - name: Determine version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v4.2.0
+
+      - name: Update manifest.json version
+        run: |
+          VERSION=${{ steps.gitversion.outputs.semVer }}
+          jq --arg v "$VERSION" '.version = $v' \
+            custom_components/northstar/manifest.json > tmp.json \
+            && mv tmp.json custom_components/northstar/manifest.json
+          echo "Version: $VERSION"
+          cat custom_components/northstar/manifest.json
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add custom_components/northstar/manifest.json
+          git diff --staged --quiet && echo "No version change" && exit 0
+          git commit -m "Bump version to ${{ steps.gitversion.outputs.semVer }}"
+          git push
+
+      - name: Tag release
+        run: |
+          git tag v${{ steps.gitversion.outputs.semVer }}
+          git push origin v${{ steps.gitversion.outputs.semVer }}

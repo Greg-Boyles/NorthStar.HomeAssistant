@@ -1,0 +1,14 @@
+mode: ContinuousDeployment
+branches:
+  main:
+    regex: ^main$
+    increment: Patch
+    label: ""
+  feature:
+    regex: ^features?[/-]
+    increment: Minor
+    label: alpha.{BranchName}
+  pull-request:
+    regex: ^(pull|pull\-requests|pr)[/-]
+    increment: Inherit
+    label: pr.{BranchName}
