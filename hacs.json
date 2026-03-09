@@ -1,4 +1,5 @@
 {
   "name": "Polestar NorthStar Api",
-  "render_readme": true
+  "render_readme": true,
+  "icon": "https://raw.githubusercontent.com/Greg-Boyles/NorthStar.HomeAssistant/main/custom_components/northstar/icon.png"
 }
