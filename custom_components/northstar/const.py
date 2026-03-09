@@ -4,7 +4,7 @@ DOMAIN = "northstar"
 
 # Configuration
 CONF_API_URL = "api_url"
-DEFAULT_API_URL = "https://localhost:7261"
+DEFAULT_API_URL = "http://NorthS-North-gSKdeBKDKYCa-509940918.eu-west-1.elb.amazonaws.com"
 
 # Update intervals
 DEFAULT_UPDATE_INTERVAL = 900  # 15 minutes
