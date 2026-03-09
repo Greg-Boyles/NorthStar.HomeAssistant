@@ -24,7 +24,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "NorthStar Options",
+        "title": "Polestar NorthStar Api Options",
         "data": {
           "update_interval": "Update interval (seconds)"
         }

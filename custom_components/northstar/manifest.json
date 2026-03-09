@@ -1,6 +1,6 @@
 {
   "domain": "northstar",
-  "name": "NorthStar Polestar",
+  "name": "Polestar NorthStar Api",
   "codeowners": ["@Greg-Boyles"],
   "config_flow": true,
   "dependencies": [],
