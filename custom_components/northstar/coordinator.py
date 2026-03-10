@@ -12,8 +12,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import APIError, AuthenticationError, NorthStarApiClient, TimeoutError
-from .const import CONF_API_URL, DEFAULT_UPDATE_INTERVAL, DOMAIN
+from .api import APIError, AuthenticationError, NorthStarApiClient, StreamNotActiveError, TimeoutError
+from .const import (
+    CONF_API_URL,
+    CONF_ENABLE_STREAMING,
+    DEFAULT_ENABLE_STREAMING,
+    DEFAULT_UPDATE_INTERVAL,
+    DOMAIN,
+    STREAMING_UPDATE_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,10 +39,19 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
         self.config_entry = config_entry
         self._token: str | None = None
         self._refresh_token: str | None = None
-
-        update_interval = timedelta(
-            seconds=config_entry.options.get("update_interval", DEFAULT_UPDATE_INTERVAL)
+        self._streaming_enabled = config_entry.options.get(
+            CONF_ENABLE_STREAMING,
+            config_entry.data.get(CONF_ENABLE_STREAMING, DEFAULT_ENABLE_STREAMING),
         )
+        self._streams_started: set[str] = set()
+
+        # Use shorter interval when streaming is enabled (data is cached server-side)
+        if self._streaming_enabled:
+            update_interval = timedelta(seconds=STREAMING_UPDATE_INTERVAL)
+        else:
+            update_interval = timedelta(
+                seconds=config_entry.options.get("update_interval", DEFAULT_UPDATE_INTERVAL)
+            )
 
         super().__init__(
             hass,
@@ -59,7 +75,7 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
                 await self._refresh_or_authenticate()
                 cars = await self.api.get_cars(self._token)
 
-            # Fetch detailed data for each car via unified snapshot endpoint
+            # Fetch detailed data for each car
             result = {}
             for car in cars:
                 vin = car.get("vin")
@@ -68,8 +84,35 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
 
                 car_data = {"car": car}
 
+                # If streaming enabled, start stream if not already started
+                if self._streaming_enabled and vin not in self._streams_started:
+                    try:
+                        if self._refresh_token:
+                            await self.api.start_stream(self._refresh_token, vin)
+                            self._streams_started.add(vin)
+                            _LOGGER.info("Started stream for VIN %s", vin)
+                        else:
+                            _LOGGER.warning(
+                                "Cannot start stream for VIN %s - no refresh token", vin
+                            )
+                    except (APIError, TimeoutError) as err:
+                        _LOGGER.error("Failed to start stream for VIN %s: %s", vin, err)
+
                 try:
-                    snapshot = await self.api.get_snapshot(self._token, vin)
+                    # If streaming enabled, try stream endpoint first
+                    if self._streaming_enabled:
+                        try:
+                            snapshot = await self.api.get_stream_data(self._token, vin)
+                            _LOGGER.debug("Got stream data for VIN %s", vin)
+                        except StreamNotActiveError:
+                            _LOGGER.warning(
+                                "Stream not active for VIN %s, falling back to snapshot", vin
+                            )
+                            snapshot = await self.api.get_snapshot(self._token, vin)
+                    else:
+                        # Not streaming - use regular snapshot endpoint
+                        snapshot = await self.api.get_snapshot(self._token, vin)
+
                     car_data["battery"] = snapshot.get("battery")
                     car_data["trips"] = snapshot.get("trips")
                     car_data["status"] = snapshot.get("status")
@@ -77,7 +120,7 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
                     car_data["climate_schedule"] = snapshot.get("climateSchedule")
                 except TimeoutError:
                     _LOGGER.warning(
-                        "Timeout fetching snapshot for VIN %s (car may be asleep)", vin
+                        "Timeout fetching data for VIN %s (car may be asleep)", vin
                     )
                     car_data.update(
                         battery=None, trips=None, status=None,
@@ -85,7 +128,7 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
                     )
                 except APIError as err:
                     _LOGGER.error(
-                        "Error fetching snapshot for VIN %s: %s", vin, err
+                        "Error fetching data for VIN %s: %s", vin, err
                     )
                     car_data.update(
                         battery=None, trips=None, status=None,
@@ -132,3 +175,19 @@ class NorthStarDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Token refresh failed, falling back to full login: %s", err)
 
         await self._authenticate()
+
+    async def async_stop_streams(self) -> None:
+        """Stop all active streams."""
+        if not self._streaming_enabled or not self._streams_started:
+            return
+
+        _LOGGER.info("Stopping streams for %d VINs", len(self._streams_started))
+        for vin in list(self._streams_started):
+            try:
+                if self._token:
+                    await self.api.stop_stream(self._token, vin)
+                    _LOGGER.info("Stopped stream for VIN %s", vin)
+            except (APIError, TimeoutError) as err:
+                _LOGGER.warning("Failed to stop stream for VIN %s: %s", vin, err)
+
+        self._streams_started.clear()

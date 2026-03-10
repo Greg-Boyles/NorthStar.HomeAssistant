@@ -7,7 +7,11 @@
         "data": {
           "api_url": "API URL",
           "email": "Email",
-          "password": "Password"
+          "password": "Password",
+          "enable_streaming": "Enable streaming (near real-time updates)"
+        },
+        "data_description": {
+          "enable_streaming": "Uses server-side streaming for faster updates (polls every 60s vs 15min). Optional - uses more API resources."
         }
       }
     },
@@ -26,7 +30,11 @@
       "init": {
         "title": "Polestar NorthStar Api Options",
         "data": {
-          "update_interval": "Update interval (seconds)"
+          "update_interval": "Update interval (seconds)",
+          "enable_streaming": "Enable streaming (near real-time updates)"
+        },
+        "data_description": {
+          "enable_streaming": "Uses server-side streaming for faster updates (polls every 60s). Optional - uses more API resources."
         }
       }
     }

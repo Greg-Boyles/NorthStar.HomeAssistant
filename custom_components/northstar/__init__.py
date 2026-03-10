@@ -62,8 +62,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     # Unload platforms
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        # Close session and remove data
+        # Stop streams if streaming was enabled
         data = hass.data[DOMAIN].pop(entry.entry_id)
+        coordinator = data["coordinator"]
+        await coordinator.async_stop_streams()
+        
+        # Close session
         await data["session"].close()
 
     return unload_ok
