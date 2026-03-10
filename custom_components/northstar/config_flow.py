@@ -16,7 +16,9 @@ from homeassistant.helpers import config_validation as cv
 from .api import APIError, AuthenticationError, NorthStarApiClient, TimeoutError
 from .const import (
     CONF_API_URL,
+    CONF_ENABLE_STREAMING,
     DEFAULT_API_URL,
+    DEFAULT_ENABLE_STREAMING,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     MAX_UPDATE_INTERVAL,
@@ -30,6 +32,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_API_URL, default=DEFAULT_API_URL): str,
         vol.Required(CONF_EMAIL): str,
         vol.Required(CONF_PASSWORD): str,
+        vol.Optional(CONF_ENABLE_STREAMING, default=DEFAULT_ENABLE_STREAMING): bool,
     }
 )
 
@@ -110,6 +113,13 @@ class NorthStarOptionsFlow(config_entries.OptionsFlow):
                         cv.positive_int,
                         vol.Range(min=MIN_UPDATE_INTERVAL, max=MAX_UPDATE_INTERVAL),
                     ),
+                    vol.Optional(
+                        CONF_ENABLE_STREAMING,
+                        default=self.config_entry.options.get(
+                            CONF_ENABLE_STREAMING,
+                            self.config_entry.data.get(CONF_ENABLE_STREAMING, DEFAULT_ENABLE_STREAMING),
+                        ),
+                    ): bool,
                 }
             ),
         )

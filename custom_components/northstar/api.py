@@ -24,6 +24,10 @@ class TimeoutError(Exception):
     """Exception raised for timeout errors."""
 
 
+class StreamNotActiveError(APIError):
+    """Exception raised when stream is not active (404)."""
+
+
 class NorthStarApiClient:
     """Client for communicating with NorthStar API."""
 
@@ -100,6 +104,38 @@ class NorthStarApiClient:
         """Get unified vehicle snapshot (all data in one call)."""
         return await self._get(f"/api/cars/{vin}/snapshot", token)
 
+    async def start_stream(self, refresh_token: str, vin: str) -> dict[str, Any]:
+        """Start streaming for a VIN. No auth header needed (refresh token is the credential)."""
+        url = f"{self._base_url}/api/stream/{vin}/start"
+        data = {"refreshToken": refresh_token}
+
+        try:
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                async with self._session.post(url, json=data, ssl=False) as response:
+                    if response.status != 200:
+                        text = await response.text()
+                        raise APIError(f"Start stream failed: {response.status} - {text}")
+                    
+                    return await response.json()
+        except asyncio.TimeoutError as err:
+            raise TimeoutError("Start stream request timed out") from err
+        except aiohttp.ClientError as err:
+            raise APIError(f"Connection error: {err}") from err
+
+    async def get_stream_data(self, token: str, vin: str) -> dict[str, Any]:
+        """Get cached stream data for a VIN. Raises StreamNotActiveError on 404."""
+        try:
+            return await self._get(f"/api/stream/{vin}", token)
+        except APIError as err:
+            # Check if this is a 404 - means no active stream
+            if "404" in str(err):
+                raise StreamNotActiveError(f"No active stream for VIN {vin}") from err
+            raise
+
+    async def stop_stream(self, token: str, vin: str) -> dict[str, Any]:
+        """Stop streaming for a VIN."""
+        return await self._post(f"/api/stream/{vin}/stop", token, {})
+
     async def _get(self, path: str, token: str) -> dict[str, Any] | list[dict[str, Any]]:
         """Make a GET request."""
         url = f"{self._base_url}{path}"
@@ -108,6 +144,28 @@ class NorthStarApiClient:
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 async with self._session.get(url, headers=headers, ssl=False) as response:
+                    if response.status == 401:
+                        raise AuthenticationError("Token expired or invalid")
+                    if response.status == 504:
+                        raise TimeoutError(f"Request timed out: {path}")
+                    if response.status != 200:
+                        text = await response.text()
+                        raise APIError(f"API request failed: {response.status} - {text}")
+                    
+                    return await response.json()
+        except asyncio.TimeoutError as err:
+            raise TimeoutError(f"Request timed out: {path}") from err
+        except aiohttp.ClientError as err:
+            raise APIError(f"Connection error: {err}") from err
+
+    async def _post(self, path: str, token: str, json_data: dict[str, Any]) -> dict[str, Any]:
+        """Make a POST request."""
+        url = f"{self._base_url}{path}"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        try:
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                async with self._session.post(url, headers=headers, json=json_data, ssl=False) as response:
                     if response.status == 401:
                         raise AuthenticationError("Token expired or invalid")
                     if response.status == 504:
